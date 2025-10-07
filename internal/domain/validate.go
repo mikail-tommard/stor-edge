@@ -2,6 +2,7 @@ package domain
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/oklog/ulid/v2"
 )
@@ -86,4 +87,86 @@ func ValidateTag(s string) error {
 		return &InvalidFieldError{Field: "tag", Reason: "bad_format"}
 	}
 	return nil
-}	
+}
+
+func SanitazeName(name string, maxLen int) (string, error) {
+	for i := 0; i < len(name); i++ {
+		switch name[i] {
+		case 0x00, '\r', '\n', '\t':
+			return "", &InvalidFieldError{Field: "name", Reason: "invalid_char"}
+		}
+	}
+
+	for i := 0; i < len(name); i++ {
+		if name[i] == '/' || name[i] == '\\' {
+			return "", &InvalidFieldError{Field: "name", Reason: "invalid_char"}
+		}
+	}
+
+	if strings.TrimSpace(name) == "" {
+		return "", &InvalidFieldError{Field: "name", Reason: "empty"}
+	}
+
+	if utf8.RuneCountInString(name) > maxLen {
+		return "", &InvalidFieldError{Field: "name", Reason: "too_long"}
+	}
+
+	return name, nil
+}
+
+func ValidContentType(ct string) bool {
+	for i := 0; i < len(ct); i++ {
+		switch ct[i]{
+		case ' ', '\t', '\n', '\r':
+			return false
+		}
+	}
+
+	for i := 0; i < len(ct); i++ {
+		if ct[i] == ';' {
+			return false
+		}
+	}
+
+	slash := -1
+	for i := 0; i < len(ct); i++ {
+		if ct[i] == '/' {
+			if slash != -1 {
+				return false
+			}
+			slash = i
+		}
+	}
+	if slash <= 0 || slash == len(ct) - 1 {
+		return false
+	}
+
+	okChar := func(b byte) bool {
+		switch {
+		case b >= 'A' && b <= 'Z':
+			return true
+		case b >= 'a' && b <= 'z':
+			return true
+		case b >= '0' && b <= '9':
+			return true
+		}
+		switch b {
+		case '!', '#', '$', '&', '^', '_', '.', '+', '-':
+			return true
+		}
+		return false
+	}
+
+	for i := 0; i < slash; i++ {
+		if !okChar(ct[i]) {
+			return false
+		}
+	}
+
+	for i := slash + 1; i < len(ct); i++ {
+		if !okChar(ct[i]) {
+			return false
+		}
+	}
+	return true
+}
